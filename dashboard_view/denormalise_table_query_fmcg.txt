@@ -1,0 +1,68 @@
+-- Create dim_date table from existing fact_orders dates
+CREATE OR REPLACE TABLE fmgc.gold.dim_date AS
+SELECT
+    date AS month_start_date,
+    CAST(DATE_FORMAT(date, 'yyyyMM') AS INT) AS date_key,
+    YEAR(date) AS year,
+    DATE_FORMAT(date, 'MMMM') AS month_name,
+    DATE_FORMAT(date, 'MMM') AS month_short_name,
+    CONCAT('Q', QUARTER(date)) AS quarter,
+    CONCAT(YEAR(date), '-Q', QUARTER(date)) AS year_quarter
+FROM (SELECT DISTINCT date FROM fmgc.gold.fact_orders);
+
+CREATE OR REPLACE VIEW fmgc.gold.vw_fact_orders_enriched AS (
+    SELECT 
+        fo.date,
+        fo.product_code,
+        fo.customer_code,
+
+        -- Date attributes
+        dd.date_key,
+        dd.year,
+        dd.month_name,
+        dd.month_short_name,
+        dd.quarter,
+        dd.year_quarter,
+
+        -- Customer attributes
+        dc.customer,
+        dc.market,
+        dc.platform,
+        dc.channel,
+
+        -- Product attributes
+        dp.division,
+        dp.category,
+        dp.product,
+        dp.variant,
+
+        -- Metrics
+        fo.sold_quantity,
+        gp.price_inr,
+
+        -- Derived Metric: Amount
+        (fo.sold_quantity * gp.price_inr) AS total_amount_inr
+    
+    FROM fmgc.gold.fact_orders fo
+
+    -- Join with Date Dimension
+    LEFT JOIN fmgc.gold.dim_date dd
+           ON fo.date = dd.month_start_date
+
+    -- Join with Customers
+    LEFT JOIN fmgc.gold.dim_customers dc 
+           ON fo.customer_code = dc.customer_code
+
+    -- Join with Products
+    LEFT JOIN fmgc.gold.dim_products dp 
+           ON fo.product_code = dp.product_code
+
+    -- Join with Price (year-based)
+    LEFT JOIN fmgc.gold.dim_gross_price gp 
+           ON fo.product_code = gp.product_code
+          AND YEAR(fo.date) = gp.year
+);
+
+
+-- Preview
+SELECT * FROM fmgc.gold.vw_fact_orders_enriched;
